@@ -11,6 +11,7 @@ import CameraCapture from './components/CameraCapture';
 import MemberCard from './components/MemberCard';
 import PlansPage from './pages/PlansPage';
 import CalendarPage from './pages/CalendarPage';
+import GuestPreview from './pages/GuestPreview';
 
 function AuthPage({ mode }) {
   const navigate = useNavigate(); const isSignup = mode === 'signup';
@@ -86,7 +87,7 @@ export default function App() {
   const [user, setUser] = useState(undefined); const [profile, setProfile] = useState(null);
   useEffect(() => { if (!firebaseConfigured) { setUser(null); return undefined; } return onAuthStateChanged(auth, async current => { setUser(current); if (current) { const snapshot = await getDoc(doc(db, 'users', current.uid)); setProfile(snapshot.exists() ? snapshot.data() : null); } else setProfile(null); }); }, []);
   if (user === undefined) return <div className="auth-page">Loading Roxy GYM...</div>;
-  if (!user) return <Routes><Route path="/guest" element={<GuestPage />} /><Route path="/signup" element={<AuthPage mode="signup" />} /><Route path="*" element={<AuthPage mode="login" />} /></Routes>;
+  if (!user) return <GuestPreview />;
   if (!profile) return <div className="auth-page"><div className="auth-card"><h1>Profile unavailable</h1><p>Your account exists, but its Firestore user profile is missing.</p><button className="primary-btn" onClick={() => signOut(auth)}>Sign out</button></div></div>;
   return <AppShell user={user} profile={profile} />;
 }
