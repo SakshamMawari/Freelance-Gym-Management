@@ -19,3 +19,4 @@ export const useMembers = (admin, uid) => useCollection('users', admin ? [where(
 export const useMemberships = (admin, uid) => useCollection('memberships', admin ? [] : [where('userId', '==', uid)]);
 export const usePayments = (admin, uid) => useCollection('payments', admin ? [orderBy('date', 'desc')] : [where('userId', '==', uid), orderBy('date', 'desc')]);
 export const useAttendance = (admin, uid) => useCollection('attendance', admin ? [orderBy('checkInTime', 'desc')] : [where('userId', '==', uid), orderBy('checkInTime', 'desc')]);
+export const usePlans = () => useCollection('plans', [orderBy('planName')]);

@@ -18,3 +18,4 @@ export const statusLabel = expiryDate => {
 export const toTimestamp = value => Timestamp.fromDate(new Date(`${value}T00:00:00`));
 export const initials = name => String(name || '?').split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase();
 export const friendlyError = error => error?.message?.replace('Firebase: ', '') || 'Something went wrong.';
+export const planDuration = plan => Number(plan?.durationDays ?? plan?.duration ?? 0);

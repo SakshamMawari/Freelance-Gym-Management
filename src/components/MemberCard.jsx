@@ -1,0 +1,6 @@
+import { dateText, initials, statusFor, statusLabel } from '../utils';
+
+export default function MemberCard({ member, membership, onEdit, onDelete, onDetails, onRenew }) {
+  const status = membership ? statusFor(membership.expiryDate) : 'expired';
+  return <article className="member-card member-card-grid"><div className="member-card-head">{member.photoURL ? <img className="member-photo" src={member.photoURL} alt={member.name} /> : <div className="avatar member-photo">{initials(member.name)}</div>}<div className="member-copy"><h2>{member.name}</h2><p>{member.phone}</p></div><span className={`status-badge ${status}`}><i />{membership ? statusLabel(membership.expiryDate) : 'No plan'}</span></div><div className="member-card-details"><div><small>Plan</small><strong>{membership?.planName || membership?.plan || 'Not set'}</strong></div><div><small>Expires</small><strong>{membership ? dateText(membership.expiryDate) : 'Not set'}</strong></div></div><div className="member-card-actions"><button className="outline-btn" onClick={() => onDetails(member)}>View details</button><button className="outline-btn" onClick={() => onEdit(member)}>Edit</button><button className="secondary-btn" onClick={() => onRenew(member)}>Renew membership</button><button className="outline-btn danger-btn" onClick={() => onDelete(member)}>Delete</button></div></article>;
+}
