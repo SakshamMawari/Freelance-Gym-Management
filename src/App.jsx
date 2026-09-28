@@ -1,93 +1,261 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom';
-import { createUserWithEmailAndPassword, onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { addDoc, collection, deleteDoc, doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
-import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { httpsCallable } from 'firebase/functions';
-import { auth, db, firebaseConfigured, functions, storage } from './firebase';
-import { useAttendance, useMembers, useMemberships, usePayments, usePlans } from './hooks';
-import { asDate, dateInput, dateText, friendlyError, initials, planDuration, statusFor, statusLabel, today, toTimestamp } from './utils';
-import CameraCapture from './components/CameraCapture';
-import MemberCard from './components/MemberCard';
-import PlansPage from './pages/PlansPage';
-import CalendarPage from './pages/CalendarPage';
+import React, { useEffect, useState } from 'react';
+import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { supabase, supabaseConfigured } from './lib/supabaseClient';
+import { friendlyError } from './utils';
+import AppShell from './components/AppShell';
 import GuestPreview from './pages/GuestPreview';
+import LoadingPage from './pages/LoadingPage';
+import ErrorPage from './pages/ErrorPage';
 
-function AuthPage({ mode }) {
-  const navigate = useNavigate(); const isSignup = mode === 'signup';
-  const [form, setForm] = useState({ name: '', phone: '', email: '', password: '' }); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
-  const submit = async event => { event.preventDefault(); setBusy(true); setError(''); try { const credential = isSignup ? await createUserWithEmailAndPassword(auth, form.email, form.password) : await signInWithEmailAndPassword(auth, form.email, form.password); if (isSignup) await setDoc(doc(db, 'users', credential.user.uid), { uid: credential.user.uid, name: form.name.trim(), phone: form.phone.trim(), role: 'member', joinDate: toTimestamp(today()) }); navigate('/'); } catch (err) { setError(friendlyError(err)); } finally { setBusy(false); } };
-  const resetPassword = async () => { if (!form.email) return setError('Enter your email first.'); try { await sendPasswordResetEmail(auth, form.email); setError('Password reset email sent.'); } catch (err) { setError(friendlyError(err)); } };
-  return <main className="auth-page"><section className="auth-card"><div className="brand">Roxy <span>GYM</span></div><div className="brand-sub">Member management</div><h1>{isSignup ? 'Create your account' : 'Welcome back'}</h1><p>{isSignup ? 'Create a member account to view your membership and check in.' : 'Sign in to manage your membership.'}</p>{!firebaseConfigured && <div className="notice">Add your Firebase values to `.env.local` before signing in.</div>}<form className="auth-form" onSubmit={submit}>{isSignup && <><div className="field"><label>Full name</label><input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div><div className="field"><label>Phone number</label><input required value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></div></>}<div className="field"><label>Email</label><input type="email" required value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div><div className="field"><label>Password</label><input type="password" minLength="6" required value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} /></div>{error && <div className="error-text">{error}</div>}<button className="primary-btn" disabled={busy}>{busy ? 'Please wait...' : isSignup ? 'Create account' : 'Sign in'}</button></form><div className="auth-links"><button className="text-btn" onClick={() => navigate(isSignup ? '/login' : '/signup')}>{isSignup ? 'I already have an account' : 'Create an account'}</button>{!isSignup && <button className="text-btn" onClick={resetPassword}>Forgot password?</button>}</div>{!isSignup && <button className="guest-btn" onClick={() => navigate('/guest')}>Continue as guest</button>}</section></main>;
-}
-
-function GuestPage() {
+function AuthPage({ mode = 'login' }) {
   const navigate = useNavigate();
-  const sampleMembers = [{ name: 'Arjun Mehta', plan: '3 Month Strength', expiry: 'Oct 18, 2026', status: 'active' }, { name: 'Neha Sharma', plan: '1 Month Fitness', expiry: 'Oct 03, 2026', status: 'expiring' }, { name: 'Kabir Singh', plan: '6 Month Performance', expiry: 'Sep 12, 2026', status: 'expired' }];
-  return <div className="roxy-app"><div className="app-shell"><header className="topbar"><div><div className="brand">Roxy <span>GYM</span></div><div className="brand-sub">Guest preview</div></div><button className="signout-btn" onClick={() => navigate('/login')}>Back to login</button></header><main><div className="notice guest-banner">You are viewing sample data. Sign in to access live members, payments, and check-ins.</div><div className="eyebrow">Today at Roxy</div><h1 className="page-title">Member overview</h1><section className="stats"><div className="stat"><div className="stat-value">24</div><div className="stat-label">Total members</div></div><div className="stat orange"><div className="stat-value">4</div><div className="stat-label">Expiring soon</div></div><div className="stat red"><div className="stat-value">2</div><div className="stat-label">Expired</div></div></section><div className="metric-grid"><div className="metric-card"><small>Payments this month</small><strong>₹48,500</strong></div><div className="metric-card"><small>Check-ins today</small><strong>18</strong></div></div><div className="member-grid">{sampleMembers.map(member => <article className="member-card member-card-grid" key={member.name}><div className="member-card-head"><div className="avatar member-photo">{initials(member.name)}</div><div className="member-copy"><h2>{member.name}</h2><p>{member.plan}</p></div><span className={`status-badge ${member.status}`}><i />{member.status === 'active' ? 'Active' : member.status === 'expiring' ? 'Expiring soon' : 'Expired'}</span></div><div className="member-card-details"><div><small>Expiry</small><strong>{member.expiry}</strong></div><div><small>Access</small><strong>Preview only</strong></div></div></article>)}</div></main></div></div>;
-}
+  const isSignup = mode === 'signup';
+  const [form, setForm] = useState({ name: '', phone: '', email: '', password: '' });
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
 
-function Layout({ user, profile, children }) {
-  return <div className="roxy-app"><div className="app-shell"><header className="topbar"><div><div className="brand">Roxy <span>GYM</span></div><div className="brand-sub">Member management</div></div><div className="topbar-actions"><span className="brand-sub">{profile?.name || user.email}</span><button className="signout-btn" onClick={() => signOut(auth)}>Sign out</button></div></header><nav className="dashboard-nav">{profile.role === 'admin' ? <><NavLink className={({ isActive }) => `tab ${isActive ? 'active' : ''}`} to="/members">Members</NavLink><NavLink className={({ isActive }) => `tab ${isActive ? 'active' : ''}`} to="/performance">Gym performance</NavLink><NavLink className={({ isActive }) => `tab ${isActive ? 'active' : ''}`} to="/register">Register</NavLink></> : <NavLink end className={({ isActive }) => `tab ${isActive ? 'active' : ''}`} to="/">Dashboard</NavLink>}</nav>{children}</div></div>;
-}
+  const submit = async event => {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      if (isSignup) {
+        const { data, error: signUpErr } = await supabase.auth.signUp({
+          email: form.email.trim(),
+          password: form.password,
+          options: {
+            data: {
+              name: form.name.trim(),
+              phone: form.phone.trim()
+            }
+          }
+        });
+        if (signUpErr) throw signUpErr;
 
-function StatusBadge({ expiryDate }) { return <span className={`status-badge ${statusFor(expiryDate)}`}><i />{statusLabel(expiryDate)}</span>; }
+        if (data?.user) {
+          try {
+            await supabase.from('profiles').upsert({
+              id: data.user.id,
+              name: form.name.trim(),
+              phone: form.phone.trim(),
+              role: 'member'
+            });
+          } catch (pe) {
+            console.warn('Profile creation notice:', pe);
+          }
+        }
+      } else {
+        const { error: signInErr } = await supabase.auth.signInWithPassword({
+          email: form.email.trim(),
+          password: form.password
+        });
+        if (signInErr) throw signInErr;
+      }
+      navigate('/');
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
-function MemberDashboard({ profile, memberships, payments, attendance, plans }) {
-  const membership = memberships.filter(item => item.userId === profile.uid).sort((a, b) => asDate(b.startDate) - asDate(a.startDate))[0];
-  const ownPayments = payments.filter(item => item.userId === profile.uid); const ownAttendance = attendance.filter(item => item.userId === profile.uid);
-  const checkIn = async () => addDoc(collection(db, 'attendance'), { userId: profile.uid, checkInTime: serverTimestamp() });
-  const plan = plans.find(item => item.id === membership?.planId);
-  if (!membership) return <main><div className="eyebrow">Your membership</div><h1 className="page-title">Welcome to Roxy GYM</h1><div className="empty">Your membership has not been set up yet. Ask the gym team to add your plan.</div></main>;
-  return <main><div className="eyebrow">Member dashboard</div><h1 className="page-title">Hi, {profile.name.split(' ')[0]}</h1><div className="profile-summary">{profile.photoURL ? <img className="avatar profile-photo" src={profile.photoURL} alt={profile.name} /> : <div className="avatar">{initials(profile.name)}</div>}<div><h2>{profile.name}</h2><StatusBadge expiryDate={membership.expiryDate} /></div></div><section className="stats"><div className="stat"><div className="stat-value">{plan?.planName || membership.plan || 'Plan'}</div><div className="stat-label">Current plan</div></div><div className="stat"><div className="stat-value">{dateText(membership.expiryDate)}</div><div className="stat-label">Expiry date</div></div><div className="stat"><div className="stat-value">{ownAttendance.length}</div><div className="stat-label">Check-ins</div></div></section><button className="primary-btn" onClick={checkIn}>Check in today</button><h2 className="section-title">Payment history</h2><div className="table-wrap"><table className="data-table"><thead><tr><th>Date</th><th>Plan</th><th>Amount</th><th>Status</th></tr></thead><tbody>{ownPayments.map(payment => <tr key={payment.id}><td>{dateText(payment.date)}</td><td>{payment.planName || 'Membership'}</td><td>₹{payment.amount}</td><td>{payment.method === 'Pending' ? 'Pending' : 'Paid'}</td></tr>)}</tbody></table></div></main>;
-}
+  const resetPassword = async () => {
+    if (!form.email) return setError('Enter your email first.');
+    try {
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(form.email.trim());
+      if (resetErr) throw resetErr;
+      setError('Password reset link sent to your inbox.');
+    } catch (err) {
+      setError(friendlyError(err));
+    }
+  };
 
-function MemberForm({ existing, plans, onDone }) {
-  const existingMembership = existing?.membership; const [photo, setPhoto] = useState(null); const [preview, setPreview] = useState(existing?.photoURL || '');
-  const [form, setForm] = useState({ name: existing?.name || '', address: existing?.address || '', phone: existing?.phone || '', email: '', password: '', planId: existingMembership?.planId || plans[0]?.id || '', startDate: dateInput(existingMembership?.startDate), method: 'UPI', paid: true }); const [error, setError] = useState('');
-  const plan = plans.find(item => item.id === form.planId);
-  const save = async event => { event.preventDefault(); setError(''); try { let uid = existing?.uid; if (!existing) { const result = await httpsCallable(functions, 'createMember')({ email: form.email, password: form.password, name: form.name.trim(), address: form.address.trim(), phone: form.phone.trim(), planId: form.planId, planName: plan.planName, durationDays: plan.durationDays, startDate: form.startDate, amount: plan.price, method: form.paid ? form.method : 'Pending' }); uid = result.data.uid; } else { await updateDoc(doc(db, 'users', uid), { name: form.name.trim(), address: form.address.trim(), phone: form.phone.trim() }); const expiry = new Date(`${form.startDate}T00:00:00`); expiry.setDate(expiry.getDate() + Number(plan.durationDays)); const membershipData = { userId: uid, planId: form.planId, plan: plan.planName, startDate: toTimestamp(form.startDate), expiryDate: toTimestamp(expiry.toISOString().slice(0, 10)), status: 'active' }; if (existingMembership) await updateDoc(doc(db, 'memberships', existingMembership.id), membershipData); else await addDoc(collection(db, 'memberships'), membershipData); } if (photo) { const photoRef = ref(storage, `member-photos/${uid}.jpg`); await uploadBytes(photoRef, photo, { contentType: 'image/jpeg' }); const photoURL = await getDownloadURL(photoRef); await updateDoc(doc(db, 'users', uid), { photoURL }); } onDone(); } catch (err) { setError(friendlyError(err)); } };
-  return <form className="form-card" onSubmit={save}><div className="form-section"><h3>Member photo</h3><CameraCapture onPhotoChange={(blob, url) => { setPhoto(blob); setPreview(url); }} />{preview && <img className="saved-photo-preview" src={preview} alt="Selected member" />}</div>{!existing && <><div className="field"><label>Email</label><input type="email" required value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div><div className="field"><label>Temporary password</label><input type="password" minLength="6" required value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} /></div></>}<div className="field"><label>Name</label><input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div><div className="field"><label>Address</label><textarea required value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} /></div><div className="field"><label>Phone</label><input required value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></div><div className="form-section"><div className="field-row"><div className="field"><label>Plan</label><select required value={form.planId} onChange={e => setForm({ ...form, planId: e.target.value })}>{plans.map(item => <option key={item.id} value={item.id}>{item.planName} · ₹{item.price}</option>)}</select></div><div className="field"><label>Start date</label><input type="date" required value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} /></div></div>{plan && <div className="notice">{plan.planName}: {plan.durationDays} days · ₹{plan.price}. Expiry is calculated automatically.</div>}<label className="toggle-row"><input type="checkbox" checked={form.paid} onChange={e => setForm({ ...form, paid: e.target.checked })} /> Mark payment as paid now</label>{form.paid && <div className="field"><label>Payment method</label><select value={form.method} onChange={e => setForm({ ...form, method: e.target.value })}><option>UPI</option><option>Cash</option><option>Card</option></select></div>}</div>{error && <div className="error-text">{error}</div>}<button className="primary-btn" disabled={!plans.length}>{existing ? 'Save member' : 'Create member'}</button></form>;
-}
-
-function Details({ member, memberships, payments, attendance, plans, onClose }) {
-  const ownMemberships = memberships.filter(item => item.userId === member.uid); const ownPayments = payments.filter(item => item.userId === member.uid); const ownAttendance = attendance.filter(item => item.userId === member.uid);
-  return <div className="modal-backdrop" onClick={onClose}><section className="modal-card" onClick={event => event.stopPropagation()}><button className="modal-close" onClick={onClose}>×</button><div className="profile-summary">{member.photoURL ? <img className="avatar profile-photo" src={member.photoURL} alt={member.name} /> : <div className="avatar">{initials(member.name)}</div>}<div><h2>{member.name}</h2><p>{member.phone}</p></div></div><h3>Membership history</h3>{ownMemberships.map(item => <p className="history-row" key={item.id}>{plans.find(plan => plan.id === item.planId)?.planName || item.plan} · expires {dateText(item.expiryDate)}</p>)}<h3>Payment history</h3>{ownPayments.map(item => <p className="history-row" key={item.id}>{item.planName} · ₹{item.amount} · {item.method === 'Pending' ? 'Pending' : dateText(item.date)}</p>)}<h3>Attendance history</h3>{ownAttendance.slice(0, 20).map(item => <p className="history-row" key={item.id}>{dateText(item.checkInTime)}</p>)}</section></div>;
-}
-
-function AdminDashboard({ members, memberships, payments, attendance, plans }) {
-  const [search, setSearch] = useState(''); const [filter, setFilter] = useState('all'); const [editing, setEditing] = useState(null); const [showForm, setShowForm] = useState(false); const [details, setDetails] = useState(null); const [renewing, setRenewing] = useState(null);
-  const membershipFor = uid => memberships.filter(item => item.userId === uid).sort((a, b) => asDate(b.startDate) - asDate(a.startDate))[0]; const visible = members.filter(member => member.name?.toLowerCase().includes(search.toLowerCase()) || member.phone?.includes(search));
-  const categorized = visible.filter(member => filter === 'all' || statusFor(membershipFor(member.uid)?.expiryDate) === filter);
-  const remove = async member => { if (!window.confirm(`Delete ${member.name}? This cannot be undone.`)) return; await deleteDoc(doc(db, 'users', member.uid)); for (const item of memberships.filter(x => x.userId === member.uid)) await deleteDoc(doc(db, 'memberships', item.id)); for (const item of payments.filter(x => x.userId === member.uid)) await deleteDoc(doc(db, 'payments', item.id)); for (const item of attendance.filter(x => x.userId === member.uid)) await deleteDoc(doc(db, 'attendance', item.id)); if (member.photoURL) { try { await deleteObject(ref(storage, `member-photos/${member.uid}.jpg`)); } catch { /* optional photo cleanup */ } } };
-  const renew = async (member, planId) => { const plan = plans.find(item => item.id === planId); if (!plan) return; const start = new Date(); const expiry = new Date(); expiry.setDate(expiry.getDate() + Number(plan.durationDays)); await addDoc(collection(db, 'memberships'), { userId: member.uid, planId, plan: plan.planName, startDate: serverTimestamp(), expiryDate: toTimestamp(expiry.toISOString().slice(0, 10)), status: 'active' }); await addDoc(collection(db, 'payments'), { userId: member.uid, amount: Number(plan.price), date: serverTimestamp(), method: 'Pending', planName: plan.planName }); setRenewing(null); };
-  const monthly = payments.filter(item => item.date && asDate(item.date).getMonth() === new Date().getMonth()).reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  return <main><div className="eyebrow">Today at Roxy</div><h1 className="page-title">Member overview</h1><section className="stats"><div className="stat"><div className="stat-value">{members.length}</div><div className="stat-label">Total members</div></div><div className="stat orange"><div className="stat-value">{members.filter(m => membershipFor(m.uid) && statusFor(membershipFor(m.uid).expiryDate) === 'expiring').length}</div><div className="stat-label">Expiring soon</div></div><div className="stat red"><div className="stat-value">{members.filter(m => membershipFor(m.uid) && statusFor(membershipFor(m.uid).expiryDate) === 'expired').length}</div><div className="stat-label">Expired</div></div></section><div className="metric-grid"><div className="metric-card"><small>Payments this month</small><strong>₹{monthly}</strong></div><div className="metric-card"><small>Check-ins</small><strong>{attendance.length}</strong></div></div><div className="toolbar"><input type="search" placeholder="Search name or phone" value={search} onChange={e => setSearch(e.target.value)} /></div><div className="filter-tabs"><button className={`tab ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>All</button><button className={`tab ${filter === 'active' ? 'active' : ''}`} onClick={() => setFilter('active')}>Live</button><button className={`tab ${filter === 'expiring' ? 'active' : ''}`} onClick={() => setFilter('expiring')}>Expiring soon</button><button className={`tab ${filter === 'expired' ? 'active' : ''}`} onClick={() => setFilter('expired')}>Expired</button></div>{showForm && <section className="form-card"><h2>{editing ? 'Edit member' : 'Add new member'}</h2><MemberForm existing={editing} plans={plans} onDone={() => { setShowForm(false); setEditing(null); }} /></section>}<div className="member-grid">{categorized.map(member => <MemberCard key={member.uid} member={member} membership={membershipFor(member.uid)} onEdit={item => { setEditing({ ...item, membership: membershipFor(item.uid) }); setShowForm(true); }} onDelete={remove} onDetails={setDetails} onRenew={setRenewing} />)}</div>{!categorized.length && <div className="empty">No members found in this category.</div>}{details && <Details member={details} memberships={memberships} payments={payments} attendance={attendance} plans={plans} onClose={() => setDetails(null)} />}{renewing && <div className="modal-backdrop"><section className="modal-card"><h2>Renew {renewing.name}</h2><p>Select a plan. The new membership is appended to history and payment is marked pending.</p><div className="plan-choice-list">{plans.map(plan => <button className="outline-btn" key={plan.id} onClick={() => renew(renewing, plan.id)}>{plan.planName} · {plan.durationDays} days · ₹{plan.price}</button>)}</div><button className="text-btn" onClick={() => setRenewing(null)}>Cancel</button></section></div>}</main>;
-}
-
-function PerformancePage({ members, payments, attendance, memberships }) {
-  const todayCheckIns = attendance.filter(item => item.checkInTime && asDate(item.checkInTime).toDateString() === new Date().toDateString()).length;
-  const revenue = payments.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const active = members.filter(member => memberships.some(item => item.userId === member.uid && statusFor(item.expiryDate) === 'active')).length;
-  return <main><div className="eyebrow">Gym performance</div><h1 className="page-title">Performance overview</h1><div className="metric-grid"><div className="metric-card"><small>Active members</small><strong>{active}</strong></div><div className="metric-card"><small>Check-ins today</small><strong>{todayCheckIns}</strong></div><div className="metric-card"><small>Total payments</small><strong>₹{revenue}</strong></div><div className="metric-card"><small>Total visits</small><strong>{attendance.length}</strong></div></div><section className="form-card performance-section"><h2>Recent check-ins</h2>{attendance.slice(0, 10).map(item => <div className="history-row" key={item.id}><strong>{members.find(member => member.uid === item.userId)?.name || 'Member'}</strong><span>{dateText(item.checkInTime)}</span></div>)}</section></main>;
-}
-
-function RegisterPage({ plans }) {
-  const navigate = useNavigate();
-  return <main><div className="eyebrow">New member</div><h1 className="page-title">Register member</h1><p className="notice">Add the member photo, personal details, payment, and plan. Expiry is calculated from the selected plan.</p><MemberForm plans={plans} onDone={() => navigate('/members')} /></main>;
-}
-
-function AppShell({ user, profile }) {
-  const admin = profile.role === 'admin'; const members = useMembers(admin, profile.uid).data; const memberships = useMemberships(admin, profile.uid).data; const payments = usePayments(admin, profile.uid).data; const attendance = useAttendance(admin, profile.uid).data; const plans = usePlans().data;
-  const data = { members, memberships, payments, attendance, plans };
-  return <Layout user={user} profile={profile}><Routes><Route path="/" element={admin ? <Navigate to="/members" replace /> : <MemberDashboard profile={profile} {...data} />} />{admin && <><Route path="/members" element={<AdminDashboard {...data} />} /><Route path="/performance" element={<PerformancePage {...data} />} /><Route path="/register" element={<RegisterPage plans={plans} />} /><Route path="/plans" element={<PlansPage plans={plans} />} /><Route path="/calendar" element={<CalendarPage memberships={memberships} members={members} attendance={attendance} />} /></>}<Route path="*" element={<Navigate to="/" replace />} /></Routes></Layout>;
+  return (
+    <main className="auth-page">
+      <section className="auth-card">
+        <div className="brand">
+          Roxy <span>GYM</span>
+        </div>
+        <div className="brand-sub">Member management</div>
+        <h1>{isSignup ? 'Create your account' : 'Welcome back'}</h1>
+        <p>
+          {isSignup
+            ? 'Create a member account to view your membership and check in.'
+            : 'Sign in to manage your gym members, payments, and plans.'}
+        </p>
+        {!supabaseConfigured && (
+          <div className="notice">Add your Supabase values to `.env.local` before signing in.</div>
+        )}
+        <form className="auth-form" onSubmit={submit}>
+          {isSignup && (
+            <>
+              <div className="field">
+                <label>Full name</label>
+                <input
+                  required
+                  value={form.name}
+                  onChange={e => setForm({ ...form, name: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>Phone number</label>
+                <input
+                  required
+                  value={form.phone}
+                  onChange={e => setForm({ ...form, phone: e.target.value })}
+                />
+              </div>
+            </>
+          )}
+          <div className="field">
+            <label>Email</label>
+            <input
+              type="email"
+              required
+              value={form.email}
+              onChange={e => setForm({ ...form, email: e.target.value })}
+            />
+          </div>
+          <div className="field">
+            <label>Password</label>
+            <input
+              type="password"
+              minLength="6"
+              required
+              value={form.password}
+              onChange={e => setForm({ ...form, password: e.target.value })}
+            />
+          </div>
+          {error && <div className="error-text">{error}</div>}
+          <button className="primary-btn" disabled={busy}>
+            {busy ? 'Please wait...' : isSignup ? 'Create account' : 'Sign in'}
+          </button>
+        </form>
+        <div className="auth-links">
+          <button
+            type="button"
+            className="text-btn"
+            onClick={() => navigate(isSignup ? '/login' : '/signup')}
+          >
+            {isSignup ? 'I already have an account' : 'Create an account'}
+          </button>
+          {!isSignup && (
+            <button type="button" className="text-btn" onClick={resetPassword}>
+              Forgot password?
+            </button>
+          )}
+        </div>
+        <button type="button" className="guest-btn" onClick={() => navigate('/guest')}>
+          Continue as guest preview
+        </button>
+      </section>
+    </main>
+  );
 }
 
 export default function App() {
-  const [user, setUser] = useState(undefined); const [profile, setProfile] = useState(null);
-  useEffect(() => { if (!firebaseConfigured) { setUser(null); return undefined; } return onAuthStateChanged(auth, async current => { setUser(current); if (current) { const snapshot = await getDoc(doc(db, 'users', current.uid)); setProfile(snapshot.exists() ? snapshot.data() : null); } else setProfile(null); }); }, []);
-  if (user === undefined) return <div className="auth-page">Loading Roxy GYM...</div>;
-  if (!user) return <GuestPreview />;
-  if (!profile) return <div className="auth-page"><div className="auth-card"><h1>Profile unavailable</h1><p>Your account exists, but its Firestore user profile is missing.</p><button className="primary-btn" onClick={() => signOut(auth)}>Sign out</button></div></div>;
-  return <AppShell user={user} profile={profile} />;
+  const [user, setUser] = useState(undefined);
+  const [profile, setProfile] = useState(null);
+
+  useEffect(() => {
+    if (!supabaseConfigured) {
+      setUser(null);
+      return undefined;
+    }
+
+    const syncProfile = async currentUser => {
+      if (!currentUser) {
+        setProfile(null);
+        return;
+      }
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', currentUser.id)
+          .maybeSingle();
+
+        if (data) {
+          setProfile({
+            id: data.id,
+            uid: data.id,
+            email: currentUser.email,
+            name: data.name,
+            phone: data.phone,
+            address: data.address,
+            role: data.role || 'member'
+          });
+        } else {
+          // Default profile for gym owner or administrator
+          setProfile({
+            id: currentUser.id,
+            uid: currentUser.id,
+            email: currentUser.email,
+            name: currentUser.user_metadata?.name || currentUser.email?.split('@')[0] || 'Gym Owner',
+            role: currentUser.user_metadata?.role || 'admin'
+          });
+        }
+      } catch (err) {
+        console.error('Error fetching user profile:', err);
+        setProfile({
+          id: currentUser.id,
+          uid: currentUser.id,
+          email: currentUser.email,
+          name: currentUser.email?.split('@')[0] || 'User',
+          role: 'member'
+        });
+      }
+    };
+
+    // 1. Initial session check
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+        syncProfile(currentUser);
+      })
+      .catch(() => {
+        setUser(null);
+      });
+
+    // 2. Auth state subscription
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      syncProfile(currentUser);
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }, []);
+
+  if (user === undefined) {
+    return <LoadingPage message="Loading Roxy GYM..." subtext="Checking account session..." />;
+  }
+
+  return (
+    <Routes>
+      <Route
+        path="/login"
+        element={user ? <Navigate to="/" replace /> : <AuthPage mode="login" />}
+      />
+      <Route
+        path="/signup"
+        element={user ? <Navigate to="/" replace /> : <AuthPage mode="signup" />}
+      />
+      <Route path="/guest" element={<GuestPreview />} />
+      <Route
+        path="/*"
+        element={
+          user ? (
+            <AppShell user={user} profile={profile} />
+          ) : (
+            <GuestPreview />
+          )
+        }
+      />
+    </Routes>
+  );
 }
