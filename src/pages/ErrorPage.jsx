@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabaseClient';
 
 /**
  * ErrorPage Component
@@ -52,14 +51,6 @@ export default function ErrorPage({
     }
   };
 
-  const handleSignOut = async () => {
-    try {
-      await supabase.auth.signOut();
-    } catch (err) {
-      console.error('Sign out failed:', err);
-    }
-    window.location.href = '/';
-  };
 
   const errorMessage = error?.message || (typeof error === 'string' ? error : '');
   const errorStack = error?.stack || errorInfo?.componentStack || '';
@@ -201,16 +192,6 @@ export default function ErrorPage({
             </svg>
             Go to Dashboard
           </button>
-
-          {type === 'profile' && (
-            <button
-              type="button"
-              className="outline-btn danger-btn error-action-btn"
-              onClick={handleSignOut}
-            >
-              Sign Out
-            </button>
-          )}
         </div>
 
         {/* Technical Details Accordion (for debugging) */}

@@ -13,7 +13,6 @@ export default function MemberForm({ existing, plans = [], onDone, onCancel }) {
     address: existing?.address || '',
     phone: existing?.phone || '',
     email: existing?.email || '',
-    password: '',
     planId: existingMembership?.planId || existing?.planId || plans[0]?.id || '',
     startDate: dateInput(existingMembership?.startDate || existing?.startDate),
     method: existing?.payment || 'UPI',
@@ -29,7 +28,6 @@ export default function MemberForm({ existing, plans = [], onDone, onCancel }) {
         address: existing.address || '',
         phone: existing.phone || '',
         email: existing.email || '',
-        password: '',
         planId: mem?.planId || existing.planId || plans[0]?.id || '',
         startDate: dateInput(mem?.startDate || existing.startDate),
         method: existing.payment || 'UPI',
@@ -49,15 +47,8 @@ export default function MemberForm({ existing, plans = [], onDone, onCancel }) {
 
   const save = async event => {
     event.preventDefault();
-    setError('');
-    const todayStr = today();
-    const originalStartDate = existing ? dateInput(existingMembership?.startDate || existing.startDate) : null;
-    if (!existing && form.startDate < todayStr) {
-      setError('Registration date cannot be earlier than today.');
-      return;
-    }
-    if (existing && form.startDate < todayStr && form.startDate !== originalStartDate) {
-      setError('Registration date cannot be earlier than today.');
+    if (!form.startDate) {
+      setError('Please select a membership start date.');
       return;
     }
 
@@ -71,7 +62,7 @@ export default function MemberForm({ existing, plans = [], onDone, onCancel }) {
       let finalPhotoURL = preview;
       if (photo) {
         try {
-          const { blob: compressedBlob, dataUrl } = await compressImage(photo, 500, 500, 0.82);
+          const { blob: compressedBlob, dataUrl } = await compressImage(photo, 256, 0.60);
           const photoFileName = `${memberId || `temp_${Date.now()}`}.jpg`;
           const { error: uploadErr } = await supabase.storage
             .from('member-photos')
@@ -145,7 +136,7 @@ export default function MemberForm({ existing, plans = [], onDone, onCancel }) {
       // If photo was captured and we now have the permanent ID to update the filename
       if (photo && finalId && finalPhotoURL && !finalPhotoURL.startsWith('http') && !finalPhotoURL.startsWith('data:')) {
         try {
-          const { blob: compressedBlob } = await compressImage(photo, 500, 500, 0.82);
+          const { blob: compressedBlob } = await compressImage(photo, 256, 0.60);
           const photoFileName = `${finalId}.jpg`;
           const { error: uploadErr } = await supabase.storage
             .from('member-photos')
@@ -182,27 +173,6 @@ export default function MemberForm({ existing, plans = [], onDone, onCancel }) {
           }}
         />
       </div>
-      {!existing && (
-        <>
-          <div className="field">
-            <label>Email</label>
-            <input
-              type="email"
-              value={form.email}
-              onChange={e => setForm({ ...form, email: e.target.value })}
-            />
-          </div>
-          <div className="field">
-            <label>Temporary password</label>
-            <input
-              type="password"
-              minLength="6"
-              value={form.password}
-              onChange={e => setForm({ ...form, password: e.target.value })}
-            />
-          </div>
-        </>
-      )}
       <div className="field">
         <label>Name</label>
         <input
@@ -212,18 +182,26 @@ export default function MemberForm({ existing, plans = [], onDone, onCancel }) {
         />
       </div>
       <div className="field">
-        <label>Address</label>
-        <textarea
-          value={form.address}
-          onChange={e => setForm({ ...form, address: e.target.value })}
-        />
-      </div>
-      <div className="field">
         <label>Phone</label>
         <input
           required
           value={form.phone}
           onChange={e => setForm({ ...form, phone: e.target.value })}
+        />
+      </div>
+      <div className="field">
+        <label>Email (Optional)</label>
+        <input
+          type="email"
+          value={form.email}
+          onChange={e => setForm({ ...form, email: e.target.value })}
+        />
+      </div>
+      <div className="field">
+        <label>Address</label>
+        <textarea
+          value={form.address}
+          onChange={e => setForm({ ...form, address: e.target.value })}
         />
       </div>
       <div className="form-section">
@@ -252,7 +230,7 @@ export default function MemberForm({ existing, plans = [], onDone, onCancel }) {
           onChangeStartDate={iso => setForm(f => ({ ...f, startDate: iso }))}
           planDurationDays={plan?.durationDays}
           plan={plan?.planName}
-          minDate={existing ? (existingMembership?.startDate ? asDate(existingMembership.startDate) : null) : new Date()}
+          minDate={null}
         />
         <div className="field">
           <label>Payment method</label>

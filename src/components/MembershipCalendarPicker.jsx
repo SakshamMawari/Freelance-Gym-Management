@@ -50,7 +50,7 @@ function MembershipCalendarPicker({
   planDurationDays,
   expiryDate,
   onChangeExpiryDate,
-  minDate = new Date()
+  minDate = null
 }) {
   const [target, setTarget] = useState('start'); // 'start' or 'expiry'
   const [isOpen, setIsOpen] = useState(true);

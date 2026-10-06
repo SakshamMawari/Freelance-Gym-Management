@@ -387,7 +387,7 @@ function MemberDetails({ member, onClose, onEdit, onRenew, onDelete, onMarkPaid 
   );
 }
 
-function MembersPage({ members, onSelect, onResetSeed }) {
+function MembersPage({ members, onSelect }) {
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const searched = useMemo(() => {
@@ -424,15 +424,7 @@ function MembersPage({ members, onSelect, onResetSeed }) {
           onChange={e => setSearch(e.target.value)}
           style={{ flex: 1, minWidth: '180px', height: '40px', padding: '0 12px', border: '1px solid var(--border)', borderRadius: '10px' }}
         />
-        <button
-          type="button"
-          className="outline-btn"
-          onClick={onResetSeed}
-          title="Reload all 100 demo members"
-          style={{ whiteSpace: 'nowrap', fontSize: '12px', padding: '0 10px', height: '40px' }}
-        >
-          ↻ Reload 100
-        </button>
+
       </div>
       <section className="stats stats-5">
         <button
@@ -638,10 +630,6 @@ export default function GuestPreview({ onSignInClick }) {
     }
   }, []);
 
-  const resetToSeed = () => {
-    setMembers(seedMembers);
-  };
-
   const saveMember = updatedMember => {
     setMembers(current => {
       if (editing) {
@@ -781,15 +769,6 @@ export default function GuestPreview({ onSignInClick }) {
           <div className="topbar-actions">
             <button
               type="button"
-              className="primary-btn"
-              style={{ padding: '6px 14px', fontSize: '0.85rem', fontWeight: 600, borderRadius: '8px' }}
-              onClick={() => onSignInClick ? onSignInClick() : navigate('/login')}
-              title="Sign in to your live gym account"
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
               className="owner-profile-btn"
               onClick={toggleSidebar}
               title="Gym Owner Profile & Themes"
@@ -808,7 +787,7 @@ export default function GuestPreview({ onSignInClick }) {
 
         <div className="page-transition-wrap swipe-views-wrapper">
           <SwipeTabViews activeIndex={activeTab} onChangeTab={handleTabChange}>
-            <MembersPage members={members} onSelect={setSelected} onResetSeed={resetToSeed} />
+            <MembersPage members={members} onSelect={setSelected} />
             <PerformancePage members={members} onMarkPaid={handleMarkPaymentPaid} />
             <main>
               <div className="eyebrow">New member</div>
@@ -861,7 +840,6 @@ export default function GuestPreview({ onSignInClick }) {
 
         <OwnerSidebar
           isGuest={true}
-          onSignIn={() => (onSignInClick ? onSignInClick() : navigate('/login'))}
         />
       </div>
     </div>

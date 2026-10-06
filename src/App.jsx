@@ -1,157 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import { supabase, supabaseConfigured } from './lib/supabaseClient';
-import { friendlyError } from './utils';
 import AppShell from './components/AppShell';
-import GuestPreview from './pages/GuestPreview';
+import OwnerLoginPage from './pages/OwnerLoginPage';
 import LoadingPage from './pages/LoadingPage';
-import ErrorPage from './pages/ErrorPage';
-
-function AuthPage({ mode = 'login' }) {
-  const navigate = useNavigate();
-  const isSignup = mode === 'signup';
-  const [form, setForm] = useState({ name: '', phone: '', email: '', password: '' });
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  const submit = async event => {
-    event.preventDefault();
-    setBusy(true);
-    setError('');
-    try {
-      if (isSignup) {
-        const { data, error: signUpErr } = await supabase.auth.signUp({
-          email: form.email.trim(),
-          password: form.password,
-          options: {
-            data: {
-              name: form.name.trim(),
-              phone: form.phone.trim()
-            }
-          }
-        });
-        if (signUpErr) throw signUpErr;
-
-        if (data?.user) {
-          try {
-            await supabase.from('profiles').upsert({
-              id: data.user.id,
-              name: form.name.trim(),
-              phone: form.phone.trim(),
-              role: 'member'
-            });
-          } catch (pe) {
-            console.warn('Profile creation notice:', pe);
-          }
-        }
-      } else {
-        const { error: signInErr } = await supabase.auth.signInWithPassword({
-          email: form.email.trim(),
-          password: form.password
-        });
-        if (signInErr) throw signInErr;
-      }
-      navigate('/');
-    } catch (err) {
-      setError(friendlyError(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const resetPassword = async () => {
-    if (!form.email) return setError('Enter your email first.');
-    try {
-      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(form.email.trim());
-      if (resetErr) throw resetErr;
-      setError('Password reset link sent to your inbox.');
-    } catch (err) {
-      setError(friendlyError(err));
-    }
-  };
-
-  return (
-    <main className="auth-page">
-      <section className="auth-card">
-        <div className="brand">
-          Roxy <span>GYM</span>
-        </div>
-        <div className="brand-sub">Member management</div>
-        <h1>{isSignup ? 'Create your account' : 'Welcome back'}</h1>
-        <p>
-          {isSignup
-            ? 'Create a member account to view your membership and check in.'
-            : 'Sign in to manage your gym members, payments, and plans.'}
-        </p>
-        {!supabaseConfigured && (
-          <div className="notice">Add your Supabase values to `.env.local` before signing in.</div>
-        )}
-        <form className="auth-form" onSubmit={submit}>
-          {isSignup && (
-            <>
-              <div className="field">
-                <label>Full name</label>
-                <input
-                  required
-                  value={form.name}
-                  onChange={e => setForm({ ...form, name: e.target.value })}
-                />
-              </div>
-              <div className="field">
-                <label>Phone number</label>
-                <input
-                  required
-                  value={form.phone}
-                  onChange={e => setForm({ ...form, phone: e.target.value })}
-                />
-              </div>
-            </>
-          )}
-          <div className="field">
-            <label>Email</label>
-            <input
-              type="email"
-              required
-              value={form.email}
-              onChange={e => setForm({ ...form, email: e.target.value })}
-            />
-          </div>
-          <div className="field">
-            <label>Password</label>
-            <input
-              type="password"
-              minLength="6"
-              required
-              value={form.password}
-              onChange={e => setForm({ ...form, password: e.target.value })}
-            />
-          </div>
-          {error && <div className="error-text">{error}</div>}
-          <button className="primary-btn" disabled={busy}>
-            {busy ? 'Please wait...' : isSignup ? 'Create account' : 'Sign in'}
-          </button>
-        </form>
-        <div className="auth-links">
-          <button
-            type="button"
-            className="text-btn"
-            onClick={() => navigate(isSignup ? '/login' : '/signup')}
-          >
-            {isSignup ? 'I already have an account' : 'Create an account'}
-          </button>
-          {!isSignup && (
-            <button type="button" className="text-btn" onClick={resetPassword}>
-              Forgot password?
-            </button>
-          )}
-        </div>
-        <button type="button" className="guest-btn" onClick={() => navigate('/guest')}>
-          Continue as guest preview
-        </button>
-      </section>
-    </main>
-  );
-}
 
 export default function App() {
   const [user, setUser] = useState(undefined);
@@ -163,7 +15,7 @@ export default function App() {
       return undefined;
     }
 
-    const syncProfile = async currentUser => {
+    const syncOwnerProfile = async currentUser => {
       if (!currentUser) {
         setProfile(null);
         return;
@@ -180,29 +32,43 @@ export default function App() {
             id: data.id,
             uid: data.id,
             email: currentUser.email,
-            name: data.name,
-            phone: data.phone,
-            address: data.address,
-            role: data.role || 'member'
+            name: data.name || currentUser.user_metadata?.name || 'Gym Owner',
+            phone: data.phone || '',
+            address: data.address || '',
+            role: 'admin',
+            photoURL: data.photo_url || ''
           });
         } else {
-          // Default profile for gym owner or administrator
+          // Provision initial owner profile
+          const ownerName = currentUser.user_metadata?.name || currentUser.email?.split('@')[0] || 'Gym Owner';
+          try {
+            await supabase.from('profiles').upsert({
+              id: currentUser.id,
+              name: ownerName,
+              role: 'admin'
+            });
+          } catch (pe) {
+            console.warn('Owner profile upsert notice:', pe);
+          }
+
           setProfile({
             id: currentUser.id,
             uid: currentUser.id,
             email: currentUser.email,
-            name: currentUser.user_metadata?.name || currentUser.email?.split('@')[0] || 'Gym Owner',
-            role: currentUser.user_metadata?.role || 'admin'
+            name: ownerName,
+            role: 'admin',
+            photoURL: ''
           });
         }
       } catch (err) {
-        console.error('Error fetching user profile:', err);
+        console.error('Error fetching owner profile:', err);
         setProfile({
           id: currentUser.id,
           uid: currentUser.id,
           email: currentUser.email,
-          name: currentUser.email?.split('@')[0] || 'User',
-          role: 'member'
+          name: currentUser.email?.split('@')[0] || 'Gym Owner',
+          role: 'admin',
+          photoURL: ''
         });
       }
     };
@@ -213,7 +79,9 @@ export default function App() {
       .then(({ data: { session } }) => {
         const currentUser = session?.user ?? null;
         setUser(currentUser);
-        syncProfile(currentUser);
+        if (currentUser) {
+          syncOwnerProfile(currentUser);
+        }
       })
       .catch(() => {
         setUser(null);
@@ -223,7 +91,11 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
-      syncProfile(currentUser);
+      if (currentUser) {
+        syncOwnerProfile(currentUser);
+      } else {
+        setProfile(null);
+      }
     });
 
     return () => {
@@ -232,29 +104,27 @@ export default function App() {
   }, []);
 
   if (user === undefined) {
-    return <LoadingPage message="Loading Roxy GYM..." subtext="Checking account session..." />;
+    return <LoadingPage message="Loading Roxy GYM..." subtext="Verifying owner session..." />;
+  }
+
+  // Only the Gym Owner is authenticated to access the app
+  if (!user) {
+    return (
+      <Routes>
+        <Route path="/login" element={<OwnerLoginPage />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
   }
 
   return (
     <Routes>
-      <Route
-        path="/login"
-        element={user ? <Navigate to="/" replace /> : <AuthPage mode="login" />}
-      />
-      <Route
-        path="/signup"
-        element={user ? <Navigate to="/" replace /> : <AuthPage mode="signup" />}
-      />
-      <Route path="/guest" element={<GuestPreview />} />
+      <Route path="/login" element={<Navigate to="/members" replace />} />
+      <Route path="/signup" element={<Navigate to="/members" replace />} />
+      <Route path="/guest" element={<Navigate to="/members" replace />} />
       <Route
         path="/*"
-        element={
-          user ? (
-            <AppShell user={user} profile={profile} />
-          ) : (
-            <GuestPreview />
-          )
-        }
+        element={<AppShell user={user} profile={profile} />}
       />
     </Routes>
   );

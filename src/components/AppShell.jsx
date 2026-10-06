@@ -1,12 +1,12 @@
 import React, { lazy, Suspense, useCallback, useMemo, useState, useEffect } from 'react';
-import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import { useMembers, usePlans } from '../hooks';
 import { initials } from '../utils';
 import { useTheme } from '../context/ThemeContext';
 import OwnerSidebar from './OwnerSidebar';
 import SwipeTabViews from './SwipeTabViews';
-import { seedMembers } from '../data/mockMembers';
+
 import LoadingPage from '../pages/LoadingPage';
 import ErrorPage from '../pages/ErrorPage';
 import ErrorBoundary from './ErrorBoundary';
@@ -14,7 +14,6 @@ import GlassBottomNav from './GlassBottomNav';
 
 // Lazy-load route components to prevent loading all views on initial load
 const AdminDashboard = lazy(() => import('../pages/AdminDashboard'));
-const MemberDashboard = lazy(() => import('../pages/MemberDashboard'));
 const PerformancePage = lazy(() => import('../pages/PerformancePage'));
 const RegisterPage = lazy(() => import('../pages/RegisterPage'));
 const PlansPage = lazy(() => import('../pages/PlansPage'));
@@ -27,7 +26,6 @@ function PageLoader() {
 function Layout({ user, profile, activeTab = 0, onTabSelect, isSwipeRoute = false, children }) {
   const { toggleSidebar } = useTheme();
   const location = useLocation();
-  const isAdmin = profile?.role === 'admin';
   const ownerName = profile?.name ? profile.name.split(' ')[0] : (user?.email?.split('@')[0] || 'Owner');
 
   const adminTabs = useMemo(() => [
@@ -71,30 +69,13 @@ function Layout({ user, profile, activeTab = 0, onTabSelect, isSwipeRoute = fals
     }
   ], []);
 
-  const memberTabs = useMemo(() => [
-    {
-      id: 'dashboard',
-      label: 'Dashboard',
-      title: 'Dashboard',
-      path: '/',
-      icon: (
-        <svg className="tab-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="3" width="7" height="9" rx="1" />
-          <rect x="14" y="3" width="7" height="5" rx="1" />
-          <rect x="14" y="12" width="7" height="9" rx="1" />
-          <rect x="3" y="16" width="7" height="5" rx="1" />
-        </svg>
-      )
-    }
-  ], []);
-
   return (
     <div className="roxy-app">
       <div className={`app-shell ${isSwipeRoute ? 'swipe-layout' : ''}`}>
         <header className="topbar">
           <div>
             <div className="brand">Roxy <span>GYM</span></div>
-            <div className="brand-sub">Member management</div>
+            <div className="brand-sub">Owner Management</div>
           </div>
           <div className="topbar-actions">
             <button
@@ -127,8 +108,8 @@ function Layout({ user, profile, activeTab = 0, onTabSelect, isSwipeRoute = fals
         </div>
 
         <GlassBottomNav
-          tabs={isAdmin ? adminTabs : memberTabs}
-          activeTab={isAdmin ? activeTab : 0}
+          tabs={adminTabs}
+          activeTab={activeTab}
           onTabSelect={(index, tab) => {
             if (onTabSelect) {
               onTabSelect(index, tab.path);
@@ -152,18 +133,17 @@ export default function AppShell({ user, profile }) {
   const [memberLimit, setMemberLimit] = useState(50);
   const location = useLocation();
   const navigate = useNavigate();
-  const admin = profile?.role === 'admin';
 
   const TAB_PATHS = useMemo(() => ['/members', '/performance', '/register'], []);
   const currentTabIndex = TAB_PATHS.indexOf(location.pathname);
-  const isSwipeRoute = admin && (currentTabIndex !== -1 || location.pathname === '/');
+  const isSwipeRoute = currentTabIndex !== -1 || location.pathname === '/';
   const activeTab = currentTabIndex !== -1 ? currentTabIndex : 0;
 
   useEffect(() => {
-    if (admin && location.pathname === '/') {
+    if (location.pathname === '/') {
       navigate('/members', { replace: true });
     }
-  }, [admin, location.pathname, navigate]);
+  }, [location.pathname, navigate]);
 
   const handleTabSelect = useCallback((index, path) => {
     if (location.pathname !== path) {
@@ -178,39 +158,11 @@ export default function AppShell({ user, profile }) {
     }
   }, [TAB_PATHS, location.pathname, navigate]);
 
-  const { data: dbMembers, hasMore: hasMoreMembers } = useMembers(admin, profile?.uid, memberLimit);
+  const { data: dbMembers, hasMore: hasMoreMembers } = useMembers(true, profile?.uid, memberLimit);
   const dbPlans = usePlans().data;
 
-  const mockData = useMemo(() => {
-    const mockM = seedMembers.map((m, idx) => ({
-      id: `seed-${idx + 1}`,
-      uid: `seed-${idx + 1}`,
-      name: m.name,
-      address: m.address,
-      phone: m.phone,
-      plan: m.plan,
-      planName: m.plan,
-      startDate: m.startDate,
-      expiry: m.expiry,
-      expiryDate: new Date(m.expiry).toISOString().slice(0, 10),
-      payment: m.payment,
-      paymentStatus: m.payment === 'Pending' ? 'pending' : 'paid',
-      amount: m.amount,
-      photoURL: m.photo || '',
-      payments: m.payments || [],
-      role: 'member'
-    }));
-    const mockPlans = [
-      { id: '1 Month', planName: '1 Month', durationDays: 30, price: 1500 },
-      { id: '3 Months', planName: '3 Months', durationDays: 90, price: 4000 },
-      { id: '6 Months', planName: '6 Months', durationDays: 180, price: 7500 },
-      { id: '1 Year', planName: '1 Year', durationDays: 365, price: 14000 }
-    ];
-    return { members: mockM, plans: mockPlans };
-  }, []);
-
-  const members = dbMembers.length > 0 ? dbMembers : mockData.members;
-  const plans = dbPlans.length > 0 ? dbPlans : mockData.plans;
+  const members = dbMembers;
+  const plans = dbPlans;
 
   const data = { members, plans };
 
@@ -236,19 +188,9 @@ export default function AppShell({ user, profile }) {
             </SwipeTabViews>
           ) : (
             <Routes>
-              <Route
-                path="/"
-                element={admin ? <Navigate to="/members" replace /> : <MemberDashboard profile={profile} {...data} />}
-              />
-              {admin && (
-                <>
-                  <Route path="/plans" element={<PlansPage plans={plans} />} />
-                  <Route
-                    path="/calendar"
-                    element={<CalendarPage members={members} />}
-                  />
-                </>
-              )}
+              <Route path="/" element={<Navigate to="/members" replace />} />
+              <Route path="/plans" element={<PlansPage plans={plans} />} />
+              <Route path="/calendar" element={<CalendarPage members={members} />} />
               <Route path="*" element={<ErrorPage type="404" inline />} />
             </Routes>
           )}
